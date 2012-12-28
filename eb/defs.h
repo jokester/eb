@@ -1,16 +1,29 @@
 /*                                                            -*- C -*-
- * Copyright (c) 1997, 98, 99, 2000, 01  
- *    Motoyuki Kasahara
+ * Copyright (c) 1997-2006  Motoyuki Kasahara
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #ifndef EB_DEFS_H
@@ -21,26 +34,19 @@ extern "C" {
 #endif
 
 #include <sys/types.h>
+#include <limits.h>
 
 #ifdef EB_BUILD_LIBRARY
+#include "sysdefs.h"
 #include "zio.h"
 #else
+#include <eb/sysdefs.h>
 #include <eb/zio.h>
 #endif
 
-#if defined(EB_BUILD_LIBRARY) && defined(ENABLE_PTHREAD)
-#define EBCONF_ENABLE_PTHREAD
-#endif
-
-#ifdef EBCONF_ENABLE_PTHREAD
+#ifdef EB_ENABLE_PTHREAD
 #include <pthread.h>
 #endif
-
-/*
- * Library version.
- */
-#define EB_VERSION_MAJOR		3
-#define EB_VERSION_MINOR		1
 
 /*
  * Disc code
@@ -68,7 +74,6 @@ extern "C" {
  */
 #define EB_SUBBOOK_INVALID		-1
 #define EB_MULTI_INVALID		-1
-#define EB_MULTI_ENTRY_INVALID		-1
 
 /*
  * Size of a page (The term `page' means `block' in JIS X 4081).
@@ -76,118 +81,106 @@ extern "C" {
 #define EB_SIZE_PAGE			2048
 
 /*
- * Data size of a book entry in a catalog file.
- */
-#define EB_SIZE_EB_CATALOG		40
-
-/*
- * Header size of the ebzip compression file.
- */
-#define EB_SIZE_EPWING_CATALOG		164
-
-/*
- * Header size of the ebzip compression file.
- */
-#define EB_SIZE_EBZIP_HEADER		22
-
-/*
- * Margin size for ebzip compression buffer.
- * (Since compressed data is larger than original in the worst case,
- * we must add margin to a compression buffer.)
- */
-#define EB_SIZE_EBZIP_MARGIN		1024
-
-/*
- * The maximum length of a word to be searched.
+ * Maximum length of a word to be searched.
  */
 #define EB_MAX_WORD_LENGTH             255
 
 /*
- * The maximum length of an EB* book title.
+ * Maximum length of an EB* book title.
  */
 #define EB_MAX_EB_TITLE_LENGTH		30
 
 /*
- * The maximum length of an EPWING book title.
+ * Maximum length of an EPWING book title.
  */
 #define EB_MAX_EPWING_TITLE_LENGTH	80
 
 /*
- * The maximum length of a book title.
+ * Maximum length of a book title.
  */
 #define EB_MAX_TITLE_LENGTH		80
 
 /*
- * The maximum length of a directory name.
+ * Maximum length of a word to be searched.
+ */
+#if defined(PATH_MAX)
+#define EB_MAX_PATH_LENGTH		PATH_MAX
+#elif defined(MAXPATHLEN)
+#define EB_MAX_PATH_LENGTH		MAXPATHLEN
+#else
+#define EB_MAX_PATH_LENGTH		1024
+#endif
+
+/*
+ * Maximum length of a directory name.
  */
 #define EB_MAX_DIRECTORY_NAME_LENGTH	8
 
 /*
- * The maximum length of a file name under a certain directory.
+ * Maximum length of a file name under a certain directory.
  * prefix(8 chars) + '.' + suffix(3 chars) + ';' + digit(1 char)
  */
 #define EB_MAX_FILE_NAME_LENGTH		14
 
 /*
- * The maximum length of a label for multi-search entry.
+ * Maximum length of a label for multi-search entry.
  */
 #define EB_MAX_MULTI_LABEL_LENGTH	30
 
 /*
- * The maximum number of font heights that a subbok supports.
+ * Maximum length of alternation text string for a private character.
  */
 #define EB_MAX_ALTERNATION_TEXT_LENGTH	31
 
 /*
- * The maximum number of font heights in a subbok.
+ * Maximum length of title for multi search.
+ */
+#define EB_MAX_MULTI_TITLE_LENGTH	32
+
+/*
+ * Maximum number of font heights in a subbok.
  */
 #define EB_MAX_FONTS			4
 
 /*
- * The maximum number of subbooks in a book.
+ * Maximum number of subbooks in a book.
  */
 #define EB_MAX_SUBBOOKS			50
 
 /*
- * The maximum number of entries in a keyword search.
+ * Maximum number of multi-search types in a subbook.
  */
-#define EB_MAX_KEYWORDS			5
+#define EB_MAX_MULTI_SEARCHES		10
 
 /*
- * The maximum number of multi-search types in a subbook.
- */
-#define EB_MAX_MULTI_SEARCHES		8
-
-/*
- * The maximum number of entries in a multi-search.
+ * Maximum number of entries in a multi-search.
  */
 #define EB_MAX_MULTI_ENTRIES		5
 
 /*
- * The maximum number of characters for alternation cache.
+ * Maximum number of entries in a keyword search.
+ */
+#define EB_MAX_KEYWORDS			EB_MAX_MULTI_ENTRIES
+
+/*
+ * Maximum number of entries in a cross search.
+ */
+#define EB_MAX_CROSS_ENTRIES		EB_MAX_MULTI_ENTRIES
+
+/*
+ * Maximum number of characters for alternation cache.
  */
 #define EB_MAX_ALTERNATION_CACHE	16
 
 /*
  * The number of text hooks.
  */
-#define EB_NUMBER_OF_HOOKS		41
+#define EB_NUMBER_OF_HOOKS		54
 
 /*
  * The number of search contexts required by a book.
  */
-#define EB_NUMBER_OF_SEARCH_CONTEXTS	5
-
-/*
- * Trick for function protypes.
- */
-#ifndef EB_P
-#if defined(__STDC__) || defined(__cplusplus) || defined(WIN32)
-#define EB_P(p) p
-#else /* not (__STDC__ && __cplusplus && WIN32) */
-#define EB_P(p) ()
-#endif /* not (__STDC__ && __cplusplus && WIN32) */
-#endif /* EB_P */
+#define EB_NUMBER_OF_SEARCH_CONTEXTS	EB_MAX_MULTI_ENTRIES
 
 /*
  * Types for various codes.
@@ -204,15 +197,15 @@ typedef int EB_Subbook_Code;
 typedef int EB_Index_Style_Code;
 typedef int EB_Search_Code;
 typedef int EB_Text_Code;
+typedef int EB_Text_Status_Code;
 typedef int EB_Multi_Search_Code;
-typedef int EB_Multi_Entry_Code;
 typedef int EB_Hook_Code;
 typedef int EB_Binary_Code;
 
 /*
  * Typedef for Structures.
  */
-#ifdef EBCONF_ENABLE_PTHREAD
+#ifdef EB_ENABLE_PTHREAD
 typedef struct EB_Lock_Struct              EB_Lock;
 #endif
 typedef struct EB_Position_Struct          EB_Position;
@@ -230,11 +223,13 @@ typedef struct EB_Book_Struct              EB_Book;
 typedef struct EB_Hit_Struct               EB_Hit;
 typedef struct EB_Hook_Struct              EB_Hook;
 typedef struct EB_Hookset_Struct           EB_Hookset;
+typedef struct EB_BookList_Entry           EB_BookList_Entry;
+typedef struct EB_BookList                 EB_BookList;
 
 /*
  * Pthreads lock.
  */
-#ifdef EBCONF_ENABLE_PTHREAD
+#ifdef EB_ENABLE_PTHREAD
 struct EB_Lock_Struct {
     /*
      * Lock count.  (For emulating recursive lock).
@@ -251,7 +246,7 @@ struct EB_Lock_Struct {
      */
     pthread_mutex_t entity_mutex;
 };
-#endif /* EBCONF_ENABLE_PTHREAD */
+#endif /* EB_ENABLE_PTHREAD */
 
 /*
  * A pair of page and offset.
@@ -339,8 +334,8 @@ struct EB_Appendix_Subbook_Struct {
     /*
      * Stop code (first and second characters).
      */
-    int stop0;
-    int stop1;
+    int stop_code0;
+    int stop_code1;
 
     /*
      * Compression Information for appendix file.
@@ -388,9 +383,16 @@ struct EB_Appendix_Struct {
     EB_Appendix_Subbook *subbook_current;
 
     /*
+     * ebnet socket file. 
+     */
+#ifdef EB_ENABLE_EBNET
+    int ebnet_file;
+#endif
+
+    /*
      * Lock.
      */
-#ifdef EBCONF_ENABLE_PTHREAD
+#ifdef EB_ENABLE_PTHREAD
     EB_Lock lock;
 #endif
 
@@ -412,6 +414,11 @@ struct EB_Font_Struct {
     EB_Font_Code font_code;
 
     /*
+     * Whether the object has been initialized.
+     */
+    int initialized;
+
+    /*
      * Character numbers of the start and end of the font.
      */
     int start;
@@ -427,6 +434,11 @@ struct EB_Font_Struct {
      * File name of the font. (EPWING only)
      */
     char file_name[EB_MAX_FILE_NAME_LENGTH + 1];
+
+    /*
+     * Font data cache.
+     */
+    char *glyphs;
 
     /*
      * Compression Information.
@@ -486,6 +498,11 @@ struct EB_Multi_Search_Struct {
     EB_Search search;
 
     /*
+     * Search title. (EPWING only)
+     */
+    char title[EB_MAX_MULTI_TITLE_LENGTH + 1];
+
+    /*
      * The number of entries the multi search has.
      */
     int entry_count;
@@ -501,8 +518,7 @@ struct EB_Multi_Search_Struct {
  */
 struct EB_Subbook_Struct {
     /*
-     * Whether information about the subbook have been loaded in this
-     * structure.
+     * Whether the object has been initialized.
      */
     int initialized;
 
@@ -562,6 +578,20 @@ struct EB_Subbook_Struct {
     char sound_file_name[EB_MAX_FILE_NAME_LENGTH + 1];
 
     /*
+     * Compression hints of Text, graphic and sound files.
+     * (temporary need, EPWING only).
+     */
+    Zio_Code text_hint_zio_code;
+    Zio_Code graphic_hint_zio_code;
+    Zio_Code sound_hint_zio_code;
+
+    /*
+     * Page number where search method titles are stored.
+     * (temporary need, EPWING only).
+     */
+    int search_title_page;
+
+    /*
      * The top page of search methods.
      */
     EB_Search word_alphabet;
@@ -572,6 +602,8 @@ struct EB_Subbook_Struct {
     EB_Search endword_kana;
     EB_Search keyword;
     EB_Search menu;
+    EB_Search image_menu;
+    EB_Search cross;
     EB_Search copyright;
     EB_Search text;
     EB_Search sound;
@@ -695,11 +727,6 @@ struct EB_Text_Context_Struct {
     size_t unprocessed_size;
 
     /*
-     * Length of the current input text phrase.
-     */
-    size_t in_step;
-
-    /*
      * Length of the current output text phrase.
      */
     size_t out_step;
@@ -721,12 +748,12 @@ struct EB_Text_Context_Struct {
     int file_end_flag;
 
     /*
-     * Whether the current text content ends or not.
+     * Status of the current text processing.
      */
-    int text_end_flag;
+    EB_Text_Status_Code text_status;
 
     /*
-     * Skip until `skipcoe' appears.
+     * Skip until `skipcode' appears.
      */
     int skip_code;
 
@@ -744,6 +771,11 @@ struct EB_Text_Context_Struct {
      * Whether the current text point is in the candidate word or not.
      */
     int is_candidate;
+
+    /*
+     * Whether the current text point is in EBXA-C gaiji area.
+     */
+    int ebxac_gaiji_flag;
 };
 
 /*
@@ -759,8 +791,12 @@ struct EB_Search_Context_Struct {
     /*
      * Function which compares word to search and pattern in an index page.
      */
-    int (*compare_pre) EB_P((const char *, const char *, size_t));
-    int (*compare_hit) EB_P((const char *, const char *, size_t));
+    int (*compare_pre)(const char *word, const char *pattern,
+	size_t length);
+    int (*compare_single)(const char *word, const char *pattern,
+	size_t length);
+    int (*compare_group)(const char *word, const char *pattern,
+	size_t length);
 
     /*
      * Result of comparison by `compare'.
@@ -838,11 +874,6 @@ struct EB_Book_Struct {
     EB_Disc_Code disc_code;
 
     /*
-     * Format version. (EPWING only)
-     */
-    int version;
-
-    /*
      * Character code of the book.
      */
     EB_Character_Code character_code;
@@ -888,9 +919,16 @@ struct EB_Book_Struct {
     EB_Search_Context search_contexts[EB_NUMBER_OF_SEARCH_CONTEXTS];
 
     /*
+     * ebnet socket file. 
+     */
+#ifdef EB_ENABLE_EBNET
+    int ebnet_file;
+#endif
+
+    /*
      * Lock.
      */
-#ifdef EBCONF_ENABLE_PTHREAD
+#ifdef EB_ENABLE_PTHREAD
     EB_Lock lock;
 #endif
 };
@@ -923,8 +961,9 @@ struct EB_Hook_Struct {
     /*
      * Hook function for the hook code `code'.
      */
-    EB_Error_Code (*function) EB_P((EB_Book *, EB_Appendix *, void *,
-	EB_Hook_Code, int, const unsigned int *));
+    EB_Error_Code (*function)(EB_Book *book, EB_Appendix *appendix,
+	void *container, EB_Hook_Code hook_code, int argc,
+	const unsigned int *argv);
 };
 
 /*
@@ -939,10 +978,60 @@ struct EB_Hookset_Struct {
     /*
      * Lock.
      */
-#ifdef EBCONF_ENABLE_PTHREAD
+#ifdef EB_ENABLE_PTHREAD
     EB_Lock lock;
 #endif
 };
+
+/*
+ * An entry of book list.
+ */
+struct EB_BookList_Entry {
+    /*
+     * name.
+     */
+    char *name;
+
+    /*
+     * Title.
+     */
+    char *title;
+};
+
+/*
+ * Book list.
+ */
+struct EB_BookList {
+    /*
+     * Book List ID.
+     */
+    EB_Book_Code code;
+
+    /*
+     * The number of book entries this list has.
+     */
+    int entry_count;
+
+    /*
+     * The maximum number of book entries that `entries' can memory.
+     */
+    int max_entry_count;
+
+    /*
+     * Book entries.
+     */
+    EB_BookList_Entry *entries;
+
+    /*
+     * Lock.
+     */
+#ifdef EB_ENABLE_PTHREAD
+    EB_Lock lock;
+#endif
+};
+
+/* for backward compatibility */
+#define EB_Multi_Entry_Code int
 
 #ifdef __cplusplus
 }

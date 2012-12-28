@@ -1,20 +1,30 @@
 /*                                                            -*- C -*-
- * Copyright (c) 1998, 99, 2000, 01  
- *    Motoyuki Kasahara
+ * Copyright (c) 1998-2006  Motoyuki Kasahara
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
-
-#include "eb.h"
-#include "build-post.h"
 
 #include "ebzip.h"
 
@@ -22,17 +32,6 @@
 #include "makedir.h"
 #include "samefile.h"
 #include "yesno.h"
-
-/*
- * Trick for function protypes.
- */
-#ifndef EB_P
-#ifdef __STDC__
-#define EB_P(p) p
-#else /* not __STDC__ */
-#define EB_P(p) ()
-#endif /* not __STDC__ */
-#endif /* EB_P */
 
 /*
  * Tricks for gettext.
@@ -45,7 +44,7 @@
 #define N_(string) (string)
 #endif
 #else
-#define _(string) (string)       
+#define _(string) (string)
 #define N_(string) (string)
 #endif
 
@@ -58,9 +57,9 @@ static int trap_file = -1;
 /*
  * Unexported function.
  */
-static int ebzip_unzip_file_internal EB_P((const char *, const char *,
-    Zio_Code, int));
-static RETSIGTYPE trap EB_P((int));
+static int ebzip_unzip_file_internal(const char *out_file_name,
+    const char *in_file_name, Zio_Code in_zio_code, int index_page);
+static void trap(int signal_number);
 
 
 /*
@@ -69,10 +68,8 @@ static RETSIGTYPE trap EB_P((int));
  * If it succeeds, 0 is returned.  Otherwise -1 is returned.
  */
 int
-ebzip_unzip_file(out_file_name, in_file_name, in_zio_code)
-    const char *out_file_name;
-    const char *in_file_name;
-    Zio_Code in_zio_code;
+ebzip_unzip_file(const char *out_file_name, const char *in_file_name,
+    Zio_Code in_zio_code)
 {
     return ebzip_unzip_file_internal(out_file_name, in_file_name,
 	in_zio_code, 0);
@@ -83,11 +80,8 @@ ebzip_unzip_file(out_file_name, in_file_name, in_zio_code)
  * If it succeeds, 0 is returned.  Otherwise -1 is returned.
  */
 int
-ebzip_unzip_start_file(out_file_name, in_file_name, in_zio_code, index_page)
-    const char *out_file_name;
-    const char *in_file_name;
-    Zio_Code in_zio_code;
-    int index_page;
+ebzip_unzip_start_file(const char *out_file_name, const char *in_file_name,
+    Zio_Code in_zio_code, int index_page)
 {
     return ebzip_unzip_file_internal(out_file_name, in_file_name,
 	in_zio_code, index_page);
@@ -98,20 +92,17 @@ ebzip_unzip_start_file(out_file_name, in_file_name, in_zio_code, index_page)
  * If it succeeds, 0 is returned.  Otherwise -1 is returned.
  */
 static int
-ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
-    const char *out_file_name;
-    const char *in_file_name;
-    Zio_Code in_zio_code;
-    int index_page;
+ebzip_unzip_file_internal(const char *out_file_name, const char *in_file_name,
+    Zio_Code in_zio_code, int index_page)
 {
     Zio in_zio;
     unsigned char *buffer = NULL;
-    size_t total_length;
+    off_t total_length;
     int out_file = -1;
     ssize_t length;
     struct stat in_status, out_status;
     unsigned int crc = 1;
-    int information_interval;
+    int progress_interval;
     int total_slices;
     int i;
 
@@ -127,9 +118,9 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
      * Output file name information.
      */
     if (!ebzip_quiet_flag) {
-	printf(_("==> uncompress %s <==\n"), in_file_name);
-	printf(_("output to %s\n"), out_file_name);
-	fflush(stdout);
+	fprintf(stderr, _("==> uncompress %s <==\n"), in_file_name);
+	fprintf(stderr, _("output to %s\n"), out_file_name);
+	fflush(stderr);
     }
 
     /*
@@ -146,8 +137,9 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
      */
     if (is_same_file(out_file_name, in_file_name)) {
 	if (!ebzip_quiet_flag) {
-	    printf(_("the input and output files are the same, skipped.\n\n"));
-	    fflush(stdout);
+	    fprintf(stderr,
+		_("the input and output files are the same, skipped.\n\n"));
+	    fflush(stderr);
 	}
 	return 0;
     }
@@ -173,7 +165,7 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
 		fflush(stderr);
 	    }
 	    return 0;
-	} else if (ebzip_overwrite_mode == EBZIP_OVERWRITE_QUERY) {
+	} else if (ebzip_overwrite_mode == EBZIP_OVERWRITE_CONFIRM) {
 	    int y_or_n;
 
 	    fprintf(stderr, _("\nthe file already exists: %s\n"),
@@ -195,8 +187,8 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
      * Open files.
      */
     if (zio_open(&in_zio, in_file_name, in_zio_code) < 0) {
-	fprintf(stderr, _("%s: failed to open the file, %s: %s\n"),
-	    invoked_name, strerror(errno), in_file_name);
+	fprintf(stderr, _("%s: failed to open the file: %s\n"),
+	    invoked_name, in_file_name);
 	goto failed;
     }
     if (in_zio_code == ZIO_SEBXA) {
@@ -233,8 +225,8 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
 	out_file = creat(out_file_name, 0666 ^ get_umask());
 #endif
 	if (out_file < 0) {
-	    fprintf(stderr, _("%s: failed to open the file, %s: %s\n"),
-		invoked_name, strerror(errno), out_file_name);
+	    fprintf(stderr, _("%s: failed to open the file: %s\n"),
+		invoked_name, out_file_name);
 	    goto failed;
 	}
 	trap_file = out_file;
@@ -247,29 +239,31 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
     total_length = 0;
     total_slices = (in_zio.file_size + in_zio.slice_size - 1)
 	/ in_zio.slice_size;
-    information_interval = EBZIP_PROGRESS_INTERVAL_FACTOR;
+    progress_interval = EBZIP_PROGRESS_INTERVAL_FACTOR;
+    if (((total_slices + 999) / 1000) > progress_interval)
+	progress_interval = ((total_slices + 999) / 1000);
 
     for (i = 0; i < total_slices; i++) {
 	/*
 	 * Read a slice.
 	 */
 	if (zio_lseek(&in_zio, total_length, SEEK_SET) < 0) {
-	    fprintf(stderr, _("%s: failed to seek the file, %s: %s\n"),
-		invoked_name, strerror(errno), in_file_name);
+	    fprintf(stderr, _("%s: failed to seek the file: %s\n"),
+		invoked_name, in_file_name);
 	    goto failed;
 	}
 	length = zio_read(&in_zio, (char *)buffer, in_zio.slice_size);
 	if (length < 0) {
-	    fprintf(stderr, _("%s: failed to read from the file, %s: %s\n"),
-		invoked_name, strerror(errno), in_file_name);
+	    fprintf(stderr, _("%s: failed to read from the file: %s\n"),
+		invoked_name, in_file_name);
 	    goto failed;
 	} else if (length == 0) {
-	    fprintf(stderr, _("%s: unexpected EOF: %s\n"), 
+	    fprintf(stderr, _("%s: unexpected EOF: %s\n"),
 		invoked_name, in_file_name);
 	    goto failed;
 	} else if (length != in_zio.slice_size
 	    && total_length + length != in_zio.file_size) {
-	    fprintf(stderr, _("%s: unexpected EOF: %s\n"), 
+	    fprintf(stderr, _("%s: unexpected EOF: %s\n"),
 		invoked_name, in_file_name);
 	    goto failed;
 	}
@@ -295,12 +289,24 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
 	/*
 	 * Output status information unless `quiet' mode.
 	 */
-	if (!ebzip_quiet_flag
-	    && i % information_interval + 1 == information_interval) {
-	    printf(_("%4.1f%% done (%lu / %lu bytes)\n"),
-		(double)(i + 1) * 100.0 / (double)total_slices,
-		(unsigned long)total_length, (unsigned long)in_zio.file_size);
-	    fflush(stdout);
+	if (!ebzip_quiet_flag && (i + 1) % progress_interval == 0) {
+#if defined(PRINTF_LL_MODIFIER)
+	    fprintf(stderr, _("%4.1f%% done (%llu / %llu bytes)\n"),
+		(double) (i + 1) * 100.0 / (double) total_slices,
+		(unsigned long long) total_length,
+		(unsigned long long) in_zio.file_size);
+#elif defined(PRINTF_I64_MODIFIER)
+	    fprintf(stderr, _("%4.1f%% done (%I64u / %I64u bytes)\n"),
+		(double) (i + 1) * 100.0 / (double) total_slices,
+		(unsigned __int64) total_length,
+		(unsigned __int64) in_zio.file_size);
+#else
+	    fprintf(stderr, _("%4.1f%% done (%lu / %lu bytes)\n"),
+		(double) (i + 1) * 100.0 / (double) total_slices,
+		(unsigned long) total_length,
+		(unsigned long) in_zio.file_size);
+#endif
+	    fflush(stderr);
 	}
     }
 
@@ -308,11 +314,20 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
      * Output the result unless quiet mode.
      */
     if (!ebzip_quiet_flag) {
-	printf(_("completed (%lu / %lu bytes)\n"),
-	    (unsigned long)in_zio.file_size, (unsigned long)in_zio.file_size);
-	printf(_("%lu -> %lu bytes\n\n"),
-	    (unsigned long)in_status.st_size, (unsigned long)total_length);
-	fflush(stdout);
+#if defined(PRINTF_LL_MODIFIER)
+	fprintf(stderr, _("completed (%llu / %llu bytes)\n"),
+	    (unsigned long long) in_zio.file_size,
+	    (unsigned long long) in_zio.file_size);
+#elif defined(PRINTF_I64_MODIFIER)
+	fprintf(stderr, _("completed (%I64u / %I64u bytes)\n"),
+	    (unsigned __int64) in_zio.file_size,
+	    (unsigned __int64) in_zio.file_size);
+#else
+	fprintf(stderr, _("%lu -> %lu bytes\n\n"),
+	    (unsigned long) in_status.st_size,
+	    (unsigned long) total_length);
+#endif
+	fflush(stderr);
     }
 
     /*
@@ -349,17 +364,13 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
     /*
      * Delete an original file unless the keep flag is set.
      */
-    if (!ebzip_test_flag && !ebzip_keep_flag && unlink(in_file_name) < 0) {
-	fprintf(stderr, _("%s: failed to unlink the file: %s\n"), invoked_name,
-	    in_file_name);
-	goto failed;
-    }
+    if (!ebzip_test_flag && !ebzip_keep_flag)
+	unlink_files_add(in_file_name);
 
     /*
      * Set owner, group, permission, atime and mtime of `out_file'.
      * We ignore return values of `chown', `chmod' and `utime'.
      */
-#if defined(HAVE_UTIME) && defined(HAVE_STRUCT_UTIMBUF)
     if (!ebzip_test_flag) {
 	struct utimbuf utim;
 
@@ -367,7 +378,6 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
 	utim.modtime = in_status.st_mtime;
 	utime(out_file_name, &utim);
     }
-#endif
 
     /*
      * Dispose memories.
@@ -412,19 +422,13 @@ ebzip_unzip_file_internal(out_file_name, in_file_name, in_zio_code, index_page)
 /*
  * Signal handler.
  */
-static RETSIGTYPE
-trap(signal_number)
-    int signal_number;
+static void
+trap(int signal_number)
 {
     if (0 <= trap_file)
 	close(trap_file);
     if (trap_file_name != NULL)
 	unlink(trap_file_name);
-    
-    exit(1);
 
-    /* not reached */
-#ifndef RETSIGTYPE_VOID
-    return 0;
-#endif
+    exit(1);
 }

@@ -1,16 +1,29 @@
 /*
- * Copyright (c) 1997, 98, 99, 2000, 01  
- *    Motoyuki Kasahara
+ * Copyright (c) 1997-2006  Motoyuki Kasahara
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include "build-pre.h"
@@ -23,18 +36,19 @@
 /*
  * Unexported functions.
  */
-static EB_Error_Code eb_load_subbook EB_P((EB_Book *));
-static EB_Error_Code eb_load_subbook_indexes EB_P((EB_Book *));
-static EB_Error_Code eb_set_subbook_eb EB_P((EB_Book *, EB_Subbook_Code));
-static EB_Error_Code eb_set_subbook_epwing EB_P((EB_Book *, EB_Subbook_Code));
+static EB_Error_Code eb_load_subbook(EB_Book *book);
+static EB_Error_Code eb_load_subbook_indexes(EB_Book *book);
+static EB_Error_Code eb_set_subbook_eb(EB_Book *book,
+    EB_Subbook_Code subbook_code);
+static EB_Error_Code eb_set_subbook_epwing(EB_Book *book,
+    EB_Subbook_Code subbook_code);
 
 
 /*
  * Initialize all subbooks in `book'.
  */
 void
-eb_initialize_subbooks(book)
-    EB_Book *book;
+eb_initialize_subbooks(EB_Book *book)
 {
     EB_Subbook *subbook;
     EB_Subbook *saved_subbook_current;
@@ -65,8 +79,12 @@ eb_initialize_subbooks(book)
         subbook->graphic_file_name[0] = '\0';
         subbook->sound_file_name[0] = '\0';
 
+	subbook->text_hint_zio_code = ZIO_PLAIN;
+	subbook->graphic_hint_zio_code = ZIO_PLAIN;
+	subbook->sound_hint_zio_code = ZIO_PLAIN;
+
+	subbook->search_title_page = 0;
 	eb_initialize_searches(book);
-	eb_initialize_multi_searches(book);
 	subbook->multi_count = 0;
 
 	eb_initialize_fonts(book);
@@ -84,8 +102,7 @@ eb_initialize_subbooks(book)
  * Finalize all subbooks in `book'.
  */
 void
-eb_finalize_subbooks(book)
-    EB_Book *book;
+eb_finalize_subbooks(EB_Book *book)
 {
     EB_Subbook *subbook;
     EB_Subbook *saved_subbook_current;
@@ -105,9 +122,8 @@ eb_finalize_subbooks(book)
         zio_finalize(&subbook->movie_zio);
 
 	eb_finalize_searches(book);
-	eb_finalize_multi_searches(book);
-
  	eb_finalize_fonts(book);
+
 	subbook->narrow_current = NULL;
 	subbook->wide_current = NULL;
     }
@@ -122,8 +138,7 @@ eb_finalize_subbooks(book)
  * Get information about the current subbook.
  */
 static EB_Error_Code
-eb_load_subbook(book)
-    EB_Book *book;
+eb_load_subbook(EB_Book *book)
 {
     EB_Error_Code error_code;
     EB_Subbook *subbook;
@@ -131,7 +146,7 @@ eb_load_subbook(book)
     LOG(("in: eb_load_subbook(book=%d)", (int)book->code));
 
     subbook = book->subbook_current;
-    
+
     /*
      * Current subbook must have been set.
      */
@@ -167,18 +182,19 @@ eb_load_subbook(book)
 	error_code = eb_load_multi_searches(book);
 	if (error_code != EB_SUCCESS)
 	    goto failed;
+	error_code = eb_load_multi_titles(book);
+	if (error_code != EB_SUCCESS)
+	    goto failed;
 
 	/*
 	 * Rewind the file descriptor of the start file.
 	 */
-	if (zio_lseek(&subbook->text_zio, 
-	    (off_t)(subbook->index_page - 1) * EB_SIZE_PAGE, SEEK_SET) < 0) {
+	if (zio_lseek(&subbook->text_zio,
+	    ((off_t) subbook->index_page - 1) * EB_SIZE_PAGE, SEEK_SET) < 0) {
 	    error_code = EB_ERR_FAIL_SEEK_TEXT;
 	    goto failed;
 	}
     }
-
-    subbook->initialized = 1;
 
   succeeded:
     LOG(("out: eb_load_subbook() = %s", eb_error_string(EB_SUCCESS)));
@@ -197,14 +213,11 @@ eb_load_subbook(book)
  * Get information about all subbooks in the book.
  */
 EB_Error_Code
-eb_load_all_subbooks(book)
-    EB_Book *book;
+eb_load_all_subbooks(EB_Book *book)
 {
     EB_Error_Code error_code;
-    EB_Subbook_Code subbook_code;
-    EB_Font_Code font_code;
     EB_Subbook *subbook;
-    int i, j;
+    int i;
 
     eb_lock(&book->lock);
     LOG(("in: eb_load_all_subbooks(book=%d)", (int)book->code));
@@ -218,22 +231,6 @@ eb_load_all_subbooks(book)
     }
 
     /*
-     * Get the current subbook and the current font.
-     */
-    if (book->subbook_current != NULL) {
-	subbook_code = book->subbook_current->code;
-	if (book->subbook_current->narrow_current != NULL)
-	    font_code = book->subbook_current->narrow_current->font_code;
-	else if (book->subbook_current->wide_current != NULL)
-	    font_code = book->subbook_current->wide_current->font_code;
-	else
-	    font_code = EB_FONT_INVALID;
-    } else {
-	subbook_code = EB_SUBBOOK_INVALID;
-	font_code = EB_FONT_INVALID;
-    }
-
-    /*
      * Initialize each subbook.
      */
     for (i = 0, subbook = book->subbooks; i < book->subbook_count;
@@ -241,37 +238,8 @@ eb_load_all_subbooks(book)
 	error_code = eb_set_subbook(book, subbook->code);
 	if (error_code != EB_SUCCESS)
 	    goto failed;
-
-	/*
-	 * Initialize each font.
-	 */
-	for (j = 0; j < EB_MAX_FONTS; j++) {
-	    if (subbook->narrow_fonts[j].font_code == EB_FONT_INVALID
-		&& subbook->wide_fonts[j].font_code == EB_FONT_INVALID)
-		continue;
-	    if (eb_set_font(book, j) != EB_SUCCESS)
-		goto failed;
-	}
     }
-
-    /*
-     * Restore the current subbook and the current font.
-     */
-    if (subbook_code == EB_SUBBOOK_INVALID)
-	eb_unset_subbook(book);
-    else {
-	error_code = eb_set_subbook(book, subbook_code);
-	if (error_code != EB_SUCCESS)
-	    goto failed;
-    }
-
-    if (font_code == EB_FONT_INVALID)
-	eb_unset_font(book);
-    else {
-	error_code = eb_set_font(book, font_code);
-	if (error_code != EB_SUCCESS)
-	    goto failed;
-    }
+    eb_unset_subbook(book);
 
     LOG(("out: eb_load_all_subbooks() = %s", eb_error_string(EB_SUCCESS)));
     eb_unlock(&book->lock);
@@ -296,8 +264,7 @@ eb_load_all_subbooks(book)
  * Otherwise, -1 is returned.
  */
 static EB_Error_Code
-eb_load_subbook_indexes(book)
-    EB_Book *book;
+eb_load_subbook_indexes(EB_Book *book)
 {
     EB_Error_Code error_code;
     EB_Subbook *subbook;
@@ -321,7 +288,8 @@ eb_load_subbook_indexes(book)
     /*
      * Read the index table in the subbook.
      */
-    if (zio_lseek(&subbook->text_zio, 0, SEEK_SET) < 0) {
+    if (zio_lseek(&subbook->text_zio,
+	    ((off_t) subbook->index_page - 1) * EB_SIZE_PAGE, SEEK_SET) < 0) {
 	error_code = EB_ERR_FAIL_SEEK_TEXT;
 	goto failed;
     }
@@ -354,6 +322,14 @@ eb_load_subbook_indexes(book)
 	 * Set index style.
 	 */
 	eb_initialize_search(&search);
+
+	search.index_id = eb_uint1(buffer_p);
+	search.start_page = eb_uint4(buffer_p + 2);
+	search.end_page   = search.start_page + eb_uint4(buffer_p + 6) - 1;
+
+	/*
+	 * Set canonicalization flags.
+	 */
 	availability = eb_uint1(buffer_p + 10);
 	if ((global_availability == 0x00 && availability == 0x02)
 	    || global_availability == 0x02) {
@@ -369,32 +345,44 @@ eb_load_subbook_indexes(book)
 	    search.long_vowel = (flags & 0x030000) >> 16;
 	    search.double_consonant = (flags & 0x00c000) >> 14;
 	    search.contracted_sound = (flags & 0x003000) >> 12;
-	    search.voiced_consonant = (flags & 0x000c00) >> 10;
-	    search.small_vowel = (flags & 0x000300) >> 8;
+	    search.small_vowel = (flags & 0x000c00) >> 10;
+	    search.voiced_consonant = (flags & 0x000300) >> 8;
 	    search.p_sound = (flags & 0x0000c0) >> 6;
-	} else {
+
+	} else if (search.index_id == 0x70 || search.index_id == 0x90) {
 	    search.katakana = EB_INDEX_STYLE_CONVERT;
 	    search.lower = EB_INDEX_STYLE_CONVERT;
 	    search.mark = EB_INDEX_STYLE_DELETE;
 	    search.long_vowel = EB_INDEX_STYLE_CONVERT;
 	    search.double_consonant = EB_INDEX_STYLE_CONVERT;
 	    search.contracted_sound = EB_INDEX_STYLE_CONVERT;
-	    search.voiced_consonant = EB_INDEX_STYLE_CONVERT;
 	    search.small_vowel = EB_INDEX_STYLE_CONVERT;
+	    search.voiced_consonant = EB_INDEX_STYLE_CONVERT;
 	    search.p_sound = EB_INDEX_STYLE_CONVERT;
-	}
-	if (book->character_code == EB_CHARCODE_ISO8859_1)
-	    search.space = EB_INDEX_STYLE_ASIS;
-	else
-	    search.space = EB_INDEX_STYLE_DELETE;
 
-	search.start_page = eb_uint4(buffer_p + 2);
-	search.end_page   = search.start_page + eb_uint4(buffer_p + 6) - 1;
+	} else {
+	    search.katakana = EB_INDEX_STYLE_ASIS;
+	    search.lower = EB_INDEX_STYLE_CONVERT;
+	    search.mark = EB_INDEX_STYLE_ASIS;
+	    search.long_vowel = EB_INDEX_STYLE_ASIS;
+	    search.double_consonant = EB_INDEX_STYLE_ASIS;
+	    search.contracted_sound = EB_INDEX_STYLE_ASIS;
+	    search.small_vowel = EB_INDEX_STYLE_ASIS;
+	    search.voiced_consonant = EB_INDEX_STYLE_ASIS;
+	    search.p_sound = EB_INDEX_STYLE_ASIS;
+	}
+
+	if (book->character_code == EB_CHARCODE_ISO8859_1
+	    || search.index_id == 0x72
+	    || search.index_id == 0x92) {
+	    search.space = EB_INDEX_STYLE_ASIS;
+	} else {
+            search.space = EB_INDEX_STYLE_DELETE;
+	}
 
 	/*
 	 * Identify search method.
 	 */
-	search.index_id = eb_uint1(buffer_p);
 	switch (search.index_id) {
 	case 0x00:
 	    memcpy(&subbook->text, &search, sizeof(EB_Search));
@@ -404,6 +392,13 @@ eb_load_subbook_indexes(book)
 	    break;
 	case 0x02:
 	    memcpy(&subbook->copyright, &search, sizeof(EB_Search));
+	    break;
+	case 0x10:
+	    memcpy(&subbook->image_menu, &search, sizeof(EB_Search));
+	    break;
+	case 0x16:
+	    if (book->disc_code == EB_DISC_EPWING)
+		subbook->search_title_page = search.start_page;
 	    break;
 	case 0x21:
 	    if (book->disc_code == EB_DISC_EB
@@ -426,6 +421,9 @@ eb_load_subbook_indexes(book)
 	    break;
 	case 0x80:
 	    memcpy(&subbook->keyword, &search, sizeof(EB_Search));
+	    break;
+	case 0x81:
+	    memcpy(&subbook->cross, &search, sizeof(EB_Search));
 	    break;
 	case 0x90:
 	    memcpy(&subbook->word_kana, &search, sizeof(EB_Search));
@@ -535,10 +533,8 @@ eb_load_subbook_indexes(book)
  * Make a subbook list in the book.
  */
 EB_Error_Code
-eb_subbook_list(book, subbook_list, subbook_count)
-    EB_Book *book;
-    EB_Subbook_Code *subbook_list;
-    int *subbook_count;
+eb_subbook_list(EB_Book *book, EB_Subbook_Code *subbook_list,
+    int *subbook_count)
 {
     EB_Error_Code error_code;
     EB_Subbook_Code *list_p;
@@ -580,9 +576,7 @@ eb_subbook_list(book, subbook_list, subbook_count)
  * Return a subbook-code of the current subbook.
  */
 EB_Error_Code
-eb_subbook(book, subbook_code)
-    EB_Book *book;
-    EB_Subbook_Code *subbook_code;
+eb_subbook(EB_Book *book, EB_Subbook_Code *subbook_code)
 {
     EB_Error_Code error_code;
 
@@ -620,9 +614,7 @@ eb_subbook(book, subbook_code)
  * Return a title of the current subbook.
  */
 EB_Error_Code
-eb_subbook_title(book, title)
-    EB_Book *book;
-    char *title;
+eb_subbook_title(EB_Book *book, char *title)
 {
     EB_Error_Code error_code;
 
@@ -660,10 +652,7 @@ eb_subbook_title(book, title)
  * Return a title of the specified subbook `subbook_code'.
  */
 EB_Error_Code
-eb_subbook_title2(book, subbook_code, title)
-    EB_Book *book;
-    EB_Subbook_Code subbook_code;
-    char *title;
+eb_subbook_title2(EB_Book *book, EB_Subbook_Code subbook_code, char *title)
 {
     EB_Error_Code error_code;
 
@@ -710,9 +699,7 @@ eb_subbook_title2(book, subbook_code, title)
  * Return a directory name of the current subbook.
  */
 EB_Error_Code
-eb_subbook_directory(book, directory)
-    EB_Book *book;
-    char *directory;
+eb_subbook_directory(EB_Book *book, char *directory)
 {
     EB_Error_Code error_code;
     char *p;
@@ -735,7 +722,7 @@ eb_subbook_directory(book, directory)
     strcpy(directory, book->subbook_current->directory_name);
     for (p = directory; *p != '\0'; p++) {
 	if ('A' <= *p && *p <= 'Z')
-	    *p = tolower(*p);
+	    *p = ASCII_TOLOWER(*p);
     }
 
     LOG(("out: eb_subbook_directory(directory=%s) = %s", directory,
@@ -759,10 +746,8 @@ eb_subbook_directory(book, directory)
  * Return a directory name of the specified subbook `subbook_code'.
  */
 EB_Error_Code
-eb_subbook_directory2(book, subbook_code, directory)
-    EB_Book *book;
-    EB_Subbook_Code subbook_code;
-    char *directory;
+eb_subbook_directory2(EB_Book *book, EB_Subbook_Code subbook_code,
+    char *directory)
 {
     EB_Error_Code error_code;
     char *p;
@@ -794,7 +779,7 @@ eb_subbook_directory2(book, subbook_code, directory)
     strcpy(directory, (book->subbooks + subbook_code)->directory_name);
     for (p = directory; *p != '\0'; p++) {
 	if ('A' <= *p && *p <= 'Z')
-	    *p = tolower(*p);
+	    *p = ASCII_TOLOWER(*p);
     }
 
     LOG(("out: eb_subbook_directory2(directory=%s) = %s", directory,
@@ -818,9 +803,7 @@ eb_subbook_directory2(book, subbook_code, directory)
  * Set the subbook `subbook_code' as the current subbook.
  */
 EB_Error_Code
-eb_set_subbook(book, subbook_code)
-    EB_Book *book;
-    EB_Subbook_Code subbook_code;
+eb_set_subbook(EB_Book *book, EB_Subbook_Code subbook_code)
 {
     EB_Error_Code error_code = EB_SUCCESS;
 
@@ -867,6 +850,8 @@ eb_set_subbook(book, subbook_code)
 	error_code = eb_set_subbook_eb(book, subbook_code);
     else
 	error_code = eb_set_subbook_epwing(book, subbook_code);
+    if (error_code != EB_SUCCESS)
+	goto failed;
 
     /*
      * Load the subbook.
@@ -875,7 +860,13 @@ eb_set_subbook(book, subbook_code)
     if (error_code != EB_SUCCESS)
 	goto failed;
 
+    /*
+     * Load font files.
+     */
+    eb_load_font_headers(book);
+
   succeeded:
+    book->subbook_current->initialized = 1;
     LOG(("out: eb_set_subbook() = %s", eb_error_string(EB_SUCCESS)));
     eb_unlock(&book->lock);
 
@@ -885,7 +876,13 @@ eb_set_subbook(book, subbook_code)
      * An error occurs...
      */
   failed:
-    eb_unset_subbook(book);
+    if (book->subbook_current != NULL) {
+	zio_close(&book->subbook_current->text_zio);
+	zio_close(&book->subbook_current->graphic_zio);
+	zio_close(&book->subbook_current->sound_zio);
+	zio_close(&book->subbook_current->movie_zio);
+    }
+    book->subbook_current = NULL;
     LOG(("out: eb_set_subbook() = %s", eb_error_string(error_code)));
     eb_unlock(&book->lock);
     return error_code;
@@ -896,14 +893,12 @@ eb_set_subbook(book, subbook_code)
  * Set the subbook `subbook_code' as the current subbook.
  */
 static EB_Error_Code
-eb_set_subbook_eb(book, subbook_code)
-    EB_Book *book;
-    EB_Subbook_Code subbook_code;
+eb_set_subbook_eb(EB_Book *book, EB_Subbook_Code subbook_code)
 {
     EB_Error_Code error_code;
     EB_Subbook *subbook;
-    char text_path_name[PATH_MAX + 1];
-    char graphic_path_name[PATH_MAX + 1];
+    char text_path_name[EB_MAX_PATH_LENGTH + 1];
+    char graphic_path_name[EB_MAX_PATH_LENGTH + 1];
     Zio_Code text_zio_code;
     Zio_Code graphic_zio_code;
 
@@ -913,29 +908,17 @@ eb_set_subbook_eb(book, subbook_code)
     subbook = book->subbook_current;
 
     /*
-     * Iinitialize compression I/O descriptors.
-     */
-    if (!subbook->initialized) {
-	zio_initialize(&subbook->text_zio);
-	zio_initialize(&subbook->graphic_zio);
-	zio_initialize(&subbook->sound_zio);
-    }
-    zio_initialize(&subbook->movie_zio);
-
-    /*
      * Open a text file if exists.
      */
+    text_zio_code = ZIO_INVALID;
+
     if (subbook->initialized) {
-	if (zio_mode(&subbook->text_zio) == ZIO_INVALID)
-	    text_zio_code = ZIO_INVALID;
-	else
+	if (zio_mode(&subbook->text_zio) != ZIO_INVALID)
 	    text_zio_code = ZIO_REOPEN;
     } else {
-	error_code = eb_find_file_name2(book->path, subbook->directory_name,
-	    "start", subbook->text_file_name);
-	if (error_code != EB_SUCCESS)
-	    text_zio_code = ZIO_INVALID;
-	else {
+	eb_canonicalize_file_name(subbook->text_file_name);
+	if (eb_find_file_name2(book->path, subbook->directory_name,
+	    EB_FILE_NAME_START, subbook->text_file_name) == EB_SUCCESS) {
 	    eb_path_name_zio_code(subbook->text_file_name, ZIO_PLAIN,
 		&text_zio_code);
 	}
@@ -948,19 +931,18 @@ eb_set_subbook_eb(book, subbook_code)
 	    error_code = EB_ERR_FAIL_OPEN_TEXT;
 	    goto failed;
 	}
+	text_zio_code = zio_mode(&subbook->text_zio);
     }
 
     /*
      * Open a graphic file if exists.
      */
-    graphic_zio_code = zio_mode(&subbook->graphic_zio);
+    graphic_zio_code = ZIO_INVALID;
 
     if (subbook->initialized) {
-	if (zio_mode(&subbook->graphic_zio) == ZIO_INVALID)
-	    graphic_zio_code = ZIO_INVALID;
-	else
+	if (zio_mode(&subbook->graphic_zio) != ZIO_INVALID)
 	    graphic_zio_code = ZIO_REOPEN;
-    } else {
+    } else if (text_zio_code != ZIO_INVALID) {
 	strcpy(subbook->graphic_file_name, subbook->text_file_name);
 	graphic_zio_code = text_zio_code;
     }
@@ -973,6 +955,7 @@ eb_set_subbook_eb(book, subbook_code)
 	    error_code = EB_ERR_FAIL_OPEN_BINARY;
 	    goto failed;
 	}
+	graphic_zio_code = zio_mode(&subbook->graphic_zio);
     }
 
     LOG(("out: eb_set_subbook_eb() = %s", eb_error_string(EB_SUCCESS)));
@@ -990,19 +973,16 @@ eb_set_subbook_eb(book, subbook_code)
  * Set the subbook `subbook_code' as the current subbook.
  */
 static EB_Error_Code
-eb_set_subbook_epwing(book, subbook_code)
-    EB_Book *book;
-    EB_Subbook_Code subbook_code;
+eb_set_subbook_epwing(EB_Book *book, EB_Subbook_Code subbook_code)
 {
     EB_Error_Code error_code;
     EB_Subbook *subbook;
-    char text_path_name[PATH_MAX + 1];
-    char graphic_path_name[PATH_MAX + 1];
-    char sound_path_name[PATH_MAX + 1];
+    char text_path_name[EB_MAX_PATH_LENGTH + 1];
+    char graphic_path_name[EB_MAX_PATH_LENGTH + 1];
+    char sound_path_name[EB_MAX_PATH_LENGTH + 1];
     Zio_Code text_zio_code;
     Zio_Code graphic_zio_code;
     Zio_Code sound_zio_code;
-    Zio_Code default_zio_code;
 
     LOG(("in: eb_set_subbook_epwing(book=%d, subbook_code=%d)",
 	(int)book->code, (int)subbook_code));
@@ -1011,20 +991,12 @@ eb_set_subbook_epwing(book, subbook_code)
 
     if (!subbook->initialized) {
 	/*
-	 * Iinitialize compression I/O descriptors.
-	 */
-	zio_initialize(&subbook->text_zio);
-	zio_initialize(&subbook->graphic_zio);
-	zio_initialize(&subbook->sound_zio);
-	zio_initialize(&subbook->movie_zio);
-
-	/*
 	 * Adjust directory names.
 	 */
 	strcpy(subbook->data_directory_name, EB_DIRECTORY_NAME_DATA);
 	eb_fix_directory_name2(book->path, subbook->directory_name,
 	    subbook->data_directory_name);
-    
+
 	strcpy(subbook->gaiji_directory_name, EB_DIRECTORY_NAME_GAIJI);
 	eb_fix_directory_name2(book->path, subbook->directory_name,
 	    subbook->gaiji_directory_name);
@@ -1036,40 +1008,37 @@ eb_set_subbook_epwing(book, subbook_code)
 
     /*
      * Open a text file if exists.
+     *
+     * If a subbook has stream data only, its index_page has been set
+     * to 0.  In this case, we must not try to open a text file of
+     * the subbook, since the text file may be for another subbook.
+     * Remember that subbooks can share a `data' sub-directory.
      */
     text_zio_code = ZIO_INVALID;
 
     if (subbook->initialized) {
 	if (zio_mode(&subbook->text_zio) != ZIO_INVALID)
 	    text_zio_code = ZIO_REOPEN;
-    } else {
-	if (eb_find_file_name3(book->path,
-	    subbook->directory_name, subbook->data_directory_name,
-	    "honmon", subbook->text_file_name) == EB_SUCCESS) {
-	    eb_path_name_zio_code(subbook->text_file_name, ZIO_PLAIN,
-		&text_zio_code);
-	    
-	} else if (eb_find_file_name3(book->path,
-	    subbook->directory_name, subbook->data_directory_name,
-	    "honmon2", subbook->text_file_name) == EB_SUCCESS) {
-	    if (book->version < 6)
-		default_zio_code = ZIO_EPWING;
-	    else
-		default_zio_code = ZIO_EPWING6;
+    } else if (subbook->index_page > 0) {
+	eb_canonicalize_file_name(subbook->text_file_name);
+	if (eb_find_file_name3(book->path, subbook->directory_name,
+	    subbook->data_directory_name, subbook->text_file_name,
+	    subbook->text_file_name) == EB_SUCCESS) {
 	    eb_path_name_zio_code(subbook->text_file_name,
-		default_zio_code, &text_zio_code);
+		subbook->text_hint_zio_code, &text_zio_code);
 	}
     }
 
     if (text_zio_code != ZIO_INVALID) {
 	eb_compose_path_name3(book->path, subbook->directory_name,
-	    subbook->data_directory_name, subbook->text_file_name, 
+	    subbook->data_directory_name, subbook->text_file_name,
 	    text_path_name);
 	if (zio_open(&subbook->text_zio, text_path_name, text_zio_code) < 0) {
 	    subbook = NULL;
 	    error_code = EB_ERR_FAIL_OPEN_TEXT;
 	    goto failed;
 	}
+	text_zio_code = zio_mode(&subbook->text_zio);
     }
 
     /*
@@ -1080,29 +1049,26 @@ eb_set_subbook_epwing(book, subbook_code)
     if (subbook->initialized) {
 	if (zio_mode(&subbook->graphic_zio) != ZIO_INVALID)
 	    graphic_zio_code = ZIO_REOPEN;
-    } else {
-	if (strncasecmp(subbook->text_file_name, "honmon2", 7)  == 0) {
-	    if (eb_find_file_name3(book->path, subbook->directory_name,
-		subbook->data_directory_name, "honmong",
-		subbook->graphic_file_name) == EB_SUCCESS) {
-		eb_path_name_zio_code(subbook->graphic_file_name, ZIO_PLAIN,
-		    &graphic_zio_code);
-	    }
-	} else {
-	    strcpy(subbook->graphic_file_name, subbook->text_file_name);
-	    graphic_zio_code = text_zio_code;
+    } else if (text_zio_code != ZIO_INVALID) {
+	eb_canonicalize_file_name(subbook->graphic_file_name);
+	if (eb_find_file_name3(book->path, subbook->directory_name,
+	    subbook->data_directory_name, subbook->graphic_file_name,
+	    subbook->graphic_file_name) == EB_SUCCESS) {
+	    eb_path_name_zio_code(subbook->graphic_file_name,
+		subbook->graphic_hint_zio_code, &graphic_zio_code);
 	}
     }
 
     if (graphic_zio_code != ZIO_INVALID) {
 	eb_compose_path_name3(book->path, subbook->directory_name,
-	    subbook->data_directory_name, subbook->graphic_file_name, 
+	    subbook->data_directory_name, subbook->graphic_file_name,
 	    graphic_path_name);
 	if (zio_open(&subbook->graphic_zio, graphic_path_name,
 	    graphic_zio_code) < 0) {
 	    error_code = EB_ERR_FAIL_OPEN_BINARY;
 	    goto failed;
 	}
+	graphic_zio_code = zio_mode(&subbook->graphic_zio);
     }
 
     /*
@@ -1113,33 +1079,26 @@ eb_set_subbook_epwing(book, subbook_code)
     if (subbook->initialized) {
 	if (zio_mode(&subbook->sound_zio) != ZIO_INVALID)
 	    sound_zio_code = ZIO_REOPEN;
-    } else {
-	if (strncasecmp(subbook->text_file_name, "honmon2", 7)  == 0) {
-	    if (eb_find_file_name3(book->path, subbook->directory_name,
-		subbook->data_directory_name, "honmons",
-		subbook->sound_file_name) == EB_SUCCESS) {
-		if (book->version < 6)
-		    default_zio_code = ZIO_PLAIN;
-		else
-		    default_zio_code = ZIO_EPWING6;
-		eb_path_name_zio_code(subbook->sound_file_name,
-		    default_zio_code, &sound_zio_code);
-	    }
-	} else {
-	    strcpy(subbook->sound_file_name, subbook->text_file_name);
-	    sound_zio_code = text_zio_code;
+    } else if (text_zio_code != ZIO_INVALID) {
+	eb_canonicalize_file_name(subbook->sound_file_name);
+	if (eb_find_file_name3(book->path, subbook->directory_name,
+	    subbook->data_directory_name, subbook->sound_file_name,
+	    subbook->sound_file_name) == EB_SUCCESS) {
+	    eb_path_name_zio_code(subbook->sound_file_name,
+		subbook->sound_hint_zio_code, &sound_zio_code);
 	}
     }
 
     if (sound_zio_code != ZIO_INVALID) {
 	eb_compose_path_name3(book->path, subbook->directory_name,
-	    subbook->data_directory_name, subbook->sound_file_name, 
+	    subbook->data_directory_name, subbook->sound_file_name,
 	    sound_path_name);
 	if (zio_open(&subbook->sound_zio, sound_path_name,
 	    sound_zio_code) < 0) {
 	    error_code = EB_ERR_FAIL_OPEN_BINARY;
 	    goto failed;
 	}
+	sound_zio_code = zio_mode(&subbook->sound_zio);
     }
 
     LOG(("out: eb_set_subbook_epwing() = %s", eb_error_string(EB_SUCCESS)));
@@ -1158,8 +1117,7 @@ eb_set_subbook_epwing(book, subbook_code)
  * Unset the current subbook.
  */
 void
-eb_unset_subbook(book)
-    EB_Book *book;
+eb_unset_subbook(EB_Book *book)
 {
     eb_lock(&book->lock);
     LOG(("in: eb_unset_subbook(book=%d)", (int)book->code));

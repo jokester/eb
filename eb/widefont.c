@@ -1,16 +1,30 @@
+/* automatically generated from narwfont.c. */
 /*
- * Copyright (c) 1997, 98, 99, 2000, 01  
- *    Motoyuki Kasahara
+ * Copyright (c) 1997-2006  Motoyuki Kasahara
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include "build-pre.h"
@@ -22,77 +36,123 @@
 /*
  * Unexported functions.
  */
-static EB_Error_Code eb_wide_character_bitmap_jis EB_P((EB_Book *, int,
-    char *));
-static EB_Error_Code eb_wide_character_bitmap_latin EB_P((EB_Book *, int,
-    char *));
+static EB_Error_Code eb_wide_character_bitmap_jis(EB_Book *book,
+    int character_number, char *bitmap);
+static EB_Error_Code eb_wide_character_bitmap_latin(EB_Book *book,
+    int character_number, char *bitmap);
+
 
 /*
- * Get font information of the current font.
- *
- * If succeeded, 0 is returned.
- * Otherwise, -1 is returned.
+ * Open a font file.
  */
 EB_Error_Code
-eb_load_wide_font(book)
-    EB_Book *book;
+eb_open_wide_font_file(EB_Book *book, EB_Font_Code font_code)
 {
     EB_Error_Code error_code;
     EB_Subbook *subbook;
-    char font_path_name[PATH_MAX + 1];
-    char buffer[16];
-    int character_count;
-    Zio *zio;
+    EB_Font *wide_font;
+    char font_path_name[EB_MAX_PATH_LENGTH + 1];
     Zio_Code zio_code;
 
-    LOG(("in: eb_load_wide_font(book=%d)", (int)book->code));
+    LOG(("in: eb_open_wide_font(book=%d, font_code=%d)",
+	(int)book->code, (int)font_code));
 
     subbook = book->subbook_current;
+    wide_font = subbook->wide_fonts + font_code;
+
+    if (wide_font->font_code == EB_FONT_INVALID) {
+	error_code = EB_ERR_FAIL_OPEN_FONT;
+	goto failed;
+    }
+    if (0 <= zio_file(&wide_font->zio))
+	goto succeeded;
 
     /*
      * If the book is EBWING, open the wide font file.
      * (In EB books, font data are stored in the `START' file.)
      */
+    zio_code = ZIO_INVALID;
+
     if (book->disc_code == EB_DISC_EB) {
-	if (zio_mode(&subbook->wide_current->zio) != ZIO_INVALID)
-	    zio_code = ZIO_REOPEN;
-	else
+	if (wide_font->initialized) {
+	    if (zio_mode(&wide_font->zio) != ZIO_INVALID)
+		zio_code = ZIO_REOPEN;
+	} else {
 	    zio_code = zio_mode(&subbook->text_zio);
-	eb_compose_path_name2(book->path, subbook->directory_name, 
+	}
+	eb_compose_path_name2(book->path, subbook->directory_name,
 	    subbook->text_file_name, font_path_name);
 
     } else {
-	if (zio_mode(&subbook->wide_current->zio) != ZIO_INVALID)
-	    zio_code = ZIO_REOPEN;
-	else {
-	    eb_canonicalize_file_name(subbook->wide_current->file_name);
-	    if (eb_find_file_name3(book->path,
-		subbook->directory_name, subbook->gaiji_directory_name,
-		subbook->wide_current->file_name, 
-		subbook->wide_current->file_name) != EB_SUCCESS) {
+	if (wide_font->initialized) {
+	    if (zio_mode(&wide_font->zio) != ZIO_INVALID)
+		zio_code = ZIO_REOPEN;
+	    eb_compose_path_name3(book->path, subbook->directory_name,
+		subbook->gaiji_directory_name, wide_font->file_name,
+		font_path_name);
+	} else {
+	    eb_canonicalize_file_name(wide_font->file_name);
+	    if (eb_find_file_name3(book->path, subbook->directory_name,
+		subbook->gaiji_directory_name, wide_font->file_name,
+		wide_font->file_name) != EB_SUCCESS) {
 		error_code = EB_ERR_FAIL_OPEN_FONT;
 		goto failed;
 	    }
+
+	    eb_compose_path_name3(book->path, subbook->directory_name,
+		subbook->gaiji_directory_name, wide_font->file_name,
+		font_path_name);
+	    eb_path_name_zio_code(font_path_name, ZIO_PLAIN, &zio_code);
 	}
-	eb_compose_path_name3(book->path, subbook->directory_name,
-	    subbook->gaiji_directory_name, subbook->wide_current->file_name,
-	    font_path_name);
-	eb_path_name_zio_code(font_path_name, ZIO_PLAIN, &zio_code);
     }
 
-    if (zio_open(&subbook->wide_current->zio, font_path_name,
-	zio_code) < 0) {
+    if (zio_code != ZIO_INVALID
+	&& zio_open(&wide_font->zio, font_path_name, zio_code) < 0) {
 	error_code = EB_ERR_FAIL_OPEN_FONT;
 	goto failed;
     }
 
+  succeeded:
+    LOG(("out: eb_open_wide_font_file(file=%d) = %s",
+	zio_file(&wide_font->zio), eb_error_string(EB_SUCCESS)));
+    return EB_SUCCESS;
+
+    /*
+     * An error occurs...
+     */
+  failed:
+    LOG(("out: eb_open_wide_font_file() = %s", eb_error_string(error_code)));
+    return error_code;
+}
+
+
+/*
+ * Read font header.
+ */
+EB_Error_Code
+eb_load_wide_font_header(EB_Book *book, EB_Font_Code font_code)
+{
+    EB_Error_Code error_code;
+    EB_Subbook *subbook;
+    EB_Font *wide_font;
+    char buffer[16];
+    int character_count;
+    Zio *zio;
+
+    LOG(("in: eb_load_wide_font_header(book=%d, font_code=%d)",
+	(int)book->code, (int)font_code));
+
+    subbook = book->subbook_current;
+    wide_font = subbook->wide_fonts + font_code;
+    zio = &wide_font->zio;
+
+    if (wide_font->initialized)
+	goto succeeded;
+
     /*
      * Read information from the text file.
      */
-    zio = &subbook->wide_current->zio;
-
-    if (zio_lseek(zio, 
-	(off_t)(subbook->wide_current->page - 1) * EB_SIZE_PAGE,
+    if (zio_lseek(zio, ((off_t) wide_font->page - 1) * EB_SIZE_PAGE,
 	SEEK_SET) < 0) {
 	error_code = EB_ERR_FAIL_SEEK_FONT;
 	goto failed;
@@ -104,38 +164,144 @@ eb_load_wide_font(book)
 
     /*
      * If the number of characters (`character_count') is 0, the font
-     * is unavailable).
+     * is unavailable.  We return EB_ERR_NO_SUCH_FONT.
      */
     character_count = eb_uint2(buffer + 12);
     if (character_count == 0) {
-	subbook->wide_current->font_code = EB_FONT_INVALID;
-	subbook->wide_current = NULL;
-	goto succeeded;
+	zio_close(zio);
+	error_code = EB_ERR_NO_SUCH_FONT;
+	goto failed;
     }
 
     /*
      * Set the information.
      */
-    subbook->wide_current->start = eb_uint2(buffer + 10);
+    wide_font->start = eb_uint2(buffer + 10);
     if (book->character_code == EB_CHARCODE_ISO8859_1) {
-	subbook->wide_current->end = subbook->wide_current->start
+	wide_font->end = wide_font->start
 	    + ((character_count / 0xfe) << 8) + (character_count % 0xfe) - 1;
-	if (0xfe < (subbook->wide_current->end & 0xff))
-	    subbook->wide_current->end += 3;
+	if (0xfe < (wide_font->end & 0xff))
+	    wide_font->end += 3;
     } else {
-	subbook->wide_current->end = subbook->wide_current->start
+	wide_font->end = wide_font->start
 	    + ((character_count / 0x5e) << 8) + (character_count % 0x5e) - 1;
-	if (0x7e < (subbook->wide_current->end & 0xff))
-	    subbook->wide_current->end += 0xa3;
+	if (0x7e < (wide_font->end & 0xff))
+	    wide_font->end += 0xa3;
+    }
+
+    if (book->character_code == EB_CHARCODE_ISO8859_1) {
+	if ((wide_font->start & 0xff) < 0x01
+	    || 0xfe < (wide_font->start & 0xff)
+	    || wide_font->start < 0x0001
+	    || 0x1efe < wide_font->end) {
+	    error_code = EB_ERR_UNEXP_FONT;
+	    goto failed;
+	}
+    } else {
+	if ((wide_font->start & 0xff) < 0x21
+	    || 0x7e < (wide_font->start & 0xff)
+	    || wide_font->start < 0xa121
+	    || 0xfe7e < wide_font->end) {
+	    error_code = EB_ERR_UNEXP_FONT;
+	    goto failed;
+	}
     }
 
   succeeded:
+    LOG(("out: eb_load_wide_font_header()", eb_error_string(EB_SUCCESS)));
     return EB_SUCCESS;
 
     /*
      * An error occurs...
      */
   failed:
+    LOG(("out: eb_load_wide_font_header()", eb_error_string(error_code)));
+    return error_code;
+}
+
+
+/*
+ * Read font glyph data.
+ */
+EB_Error_Code
+eb_load_wide_font_glyphs(EB_Book *book, EB_Font_Code font_code)
+{
+    EB_Error_Code error_code;
+    EB_Subbook *subbook;
+    EB_Font *wide_font;
+    int character_count;
+    size_t glyph_size;
+    size_t total_glyph_size;
+    Zio *zio;
+
+    LOG(("in: eb_load_wide_font_glyphs(book=%d, font_code=%d)",
+	(int)book->code, (int)font_code));
+
+    subbook = book->subbook_current;
+    wide_font = subbook->wide_fonts + font_code;
+    zio = &wide_font->zio;
+
+    if (wide_font->glyphs != NULL)
+	goto succeeded;
+
+    /*
+     * Calculate size of glyph data (`total_glyph_size').
+     *
+     *    Set the number of local defined characters to `character_count'.
+     *    Set the number of character glpyhs in a page to `page_glyph_count'.
+     *    Set size of glyph data to `total_glyph_size'.
+     */
+    if (book->character_code == EB_CHARCODE_ISO8859_1) {
+	character_count
+	    = ((wide_font->end >> 8) - (wide_font->start >> 8)) * 0xfe
+	    + ((wide_font->end & 0xff) - (wide_font->start & 0xff)) + 1;
+    } else {
+	character_count
+	    = ((wide_font->end >> 8) - (wide_font->start >> 8)) * 0x5e
+	    + ((wide_font->end & 0xff) - (wide_font->start & 0xff)) + 1;
+    }
+
+    eb_wide_font_size2(font_code, &glyph_size);
+    total_glyph_size
+	= (character_count / (1024 / glyph_size)) * 1024
+	+ (character_count % (1024 / glyph_size)) * glyph_size;
+
+    /*
+     * Allocate memory for glyph data.
+     */
+    wide_font->glyphs = (char *) malloc(total_glyph_size);
+    if (wide_font->glyphs == NULL) {
+	error_code = EB_ERR_MEMORY_EXHAUSTED;
+	goto failed;
+    }
+
+    /*
+     * Read glyphs.
+     */
+    if (zio_lseek(zio, (off_t) wide_font->page * EB_SIZE_PAGE, SEEK_SET)
+	< 0) {
+	error_code = EB_ERR_FAIL_SEEK_FONT;
+	goto failed;
+    }
+    if (zio_read(zio, wide_font->glyphs, total_glyph_size)
+	!= total_glyph_size) {
+	error_code = EB_ERR_FAIL_READ_FONT;
+	goto failed;
+    }
+
+  succeeded:
+    LOG(("out: eb_load_wide_font_glyphs()", eb_error_string(EB_SUCCESS)));
+    return EB_SUCCESS;
+
+    /*
+     * An error occurs...
+     */
+  failed:
+    LOG(("out: eb_load_wide_font_glyphs()", eb_error_string(error_code)));
+    if (wide_font->glyphs != NULL) {
+	free(wide_font->glyphs);
+	wide_font->glyphs = NULL;
+    }
     return error_code;
 }
 
@@ -144,8 +310,7 @@ eb_load_wide_font(book)
  * Examine whether the current subbook in `book' has a wide font.
  */
 int
-eb_have_wide_font(book)
-    EB_Book *book;
+eb_have_wide_font(EB_Book *book)
 {
     int i;
 
@@ -195,9 +360,7 @@ eb_have_wide_font(book)
  * Get width of the font `font_code' in the current subbook of `book'.
  */
 EB_Error_Code
-eb_wide_font_width(book, width)
-    EB_Book *book;
-    int *width;
+eb_wide_font_width(EB_Book *book, int *width)
 {
     EB_Error_Code error_code;
     EB_Font_Code font_code;
@@ -214,7 +377,7 @@ eb_wide_font_width(book, width)
     }
 
     /*
-     * The wide font must be exist in the current subbook.
+     * The wide font must exist in the current subbook.
      */
     if (book->subbook_current->wide_current == NULL) {
 	error_code = EB_ERR_NO_CUR_FONT;
@@ -246,13 +409,11 @@ eb_wide_font_width(book, width)
 }
 
 
-/* 
+/*
  * Get width of the font `font_code'.
  */
 EB_Error_Code
-eb_wide_font_width2(font_code, width)
-    EB_Font_Code font_code;
-    int *width;
+eb_wide_font_width2(EB_Font_Code font_code, int *width)
 {
     EB_Error_Code error_code;
 
@@ -296,9 +457,7 @@ eb_wide_font_width2(font_code, width)
  * of `book'.
  */
 EB_Error_Code
-eb_wide_font_size(book, size)
-    EB_Book *book;
-    size_t *size;
+eb_wide_font_size(EB_Book *book, size_t *size)
 {
     EB_Error_Code error_code;
     EB_Font_Code font_code;
@@ -317,7 +476,7 @@ eb_wide_font_size(book, size)
     }
 
     /*
-     * The wide font must be exist in the current subbook.
+     * The wide font must exist in the current subbook.
      */
     if (book->subbook_current->wide_current == NULL) {
 	error_code = EB_ERR_NO_CUR_FONT;
@@ -358,9 +517,7 @@ eb_wide_font_size(book, size)
  * subbook.
  */
 EB_Error_Code
-eb_wide_font_size2(font_code, size)
-    EB_Font_Code font_code;
-    size_t *size;
+eb_wide_font_size2(EB_Font_Code font_code, size_t *size)
 {
     EB_Error_Code error_code;
 
@@ -369,12 +526,16 @@ eb_wide_font_size2(font_code, size)
     switch (font_code) {
     case EB_FONT_16:
 	*size = EB_SIZE_WIDE_FONT_16;
+	break;
     case EB_FONT_24:
 	*size = EB_SIZE_WIDE_FONT_24;
+	break;
     case EB_FONT_30:
 	*size = EB_SIZE_WIDE_FONT_30;
+	break;
     case EB_FONT_48:
 	*size = EB_SIZE_WIDE_FONT_48;
+	break;
     default:
 	error_code = EB_ERR_NO_SUCH_FONT;
 	goto failed;
@@ -400,9 +561,7 @@ eb_wide_font_size2(font_code, size)
  * subbook in `book'.
  */
 EB_Error_Code
-eb_wide_font_start(book, start)
-    EB_Book *book;
-    int *start;
+eb_wide_font_start(EB_Book *book, int *start)
 {
     EB_Error_Code error_code;
 
@@ -418,7 +577,7 @@ eb_wide_font_start(book, start)
     }
 
     /*
-     * The wide font must be exist in the current subbook.
+     * The wide font must exist in the current subbook.
      */
     if (book->subbook_current->wide_current == NULL) {
 	error_code = EB_ERR_NO_CUR_FONT;
@@ -448,9 +607,7 @@ eb_wide_font_start(book, start)
  * subbook in `book'.
  */
 EB_Error_Code
-eb_wide_font_end(book, end)
-    EB_Book *book;
-    int *end;
+eb_wide_font_end(EB_Book *book, int *end)
 {
     EB_Error_Code error_code;
 
@@ -466,7 +623,7 @@ eb_wide_font_end(book, end)
     }
 
     /*
-     * The wide font must be exist in the current subbook.
+     * The wide font must exist in the current subbook.
      */
     if (book->subbook_current->wide_current == NULL) {
 	error_code = EB_ERR_NO_CUR_FONT;
@@ -496,10 +653,8 @@ eb_wide_font_end(book, end)
  * in the current wide font of the current subbook in `book'.
  */
 EB_Error_Code
-eb_wide_font_character_bitmap(book, character_number, bitmap)
-    EB_Book *book;
-    int character_number;
-    char *bitmap;
+eb_wide_font_character_bitmap(EB_Book *book, int character_number,
+    char *bitmap)
 {
     EB_Error_Code error_code;
 
@@ -516,7 +671,7 @@ eb_wide_font_character_bitmap(book, character_number, bitmap)
     }
 
     /*
-     * The wide font must be exist in the current subbook.
+     * The wide font must exist in the current subbook.
      */
     if (book->subbook_current->wide_current == NULL) {
 	error_code = EB_ERR_NO_CUR_FONT;
@@ -556,18 +711,15 @@ eb_wide_font_character_bitmap(book, character_number, bitmap)
  * in the current wide font of the current subbook in `book'.
  */
 static EB_Error_Code
-eb_wide_character_bitmap_jis(book, character_number, bitmap)
-    EB_Book *book;
-    int character_number;
-    char *bitmap;
+eb_wide_character_bitmap_jis(EB_Book *book, int character_number,
+    char *bitmap)
 {
     EB_Error_Code error_code;
+    EB_Font *wide_current;
     int start;
     int end;
     int character_index;
-    off_t location;
-    int width;
-    int height;
+    off_t offset;
     size_t size;
     Zio *zio;
 
@@ -577,6 +729,7 @@ character_number=%d)",
 
     start = book->subbook_current->wide_current->start;
     end = book->subbook_current->wide_current->end;
+    wide_current = book->subbook_current->wide_current;
 
     /*
      * Check for `character_number'.  Is it in a range of bitmaps?
@@ -595,36 +748,34 @@ character_number=%d)",
     /*
      * Calculate the size and the location of bitmap data.
      */
-    error_code = eb_wide_font_width(book, &width);
+    error_code = eb_wide_font_size(book, &size);
     if (error_code != EB_SUCCESS)
 	goto failed;
-    error_code = eb_font_height(book, &height);
-    if (error_code != EB_SUCCESS)
-	goto failed;
-    size = (width / 8) * height;
 
     character_index = ((character_number >> 8) - (start >> 8)) * 0x5e
 	+ ((character_number & 0xff) - (start & 0xff));
-    location
-	= (off_t)book->subbook_current->wide_current->page * EB_SIZE_PAGE
-	+ (character_index / (1024 / size)) * 1024
+    offset
+	= (character_index / (1024 / size)) * 1024
 	+ (character_index % (1024 / size)) * size;
 
     /*
      * Read bitmap data.
      */
-    if (book->disc_code == EB_DISC_EB)
-	zio = &book->subbook_current->text_zio;
-    else
-	zio = &book->subbook_current->wide_current->zio;
+    if (wide_current->glyphs == NULL) {
+	zio = &wide_current->zio;
 
-    if (zio_lseek(zio, location, SEEK_SET) < 0) {
-	error_code = EB_ERR_FAIL_SEEK_FONT;
-	goto failed;
-    }
-    if (zio_read(zio, bitmap, size) != size) {
-	error_code = EB_ERR_FAIL_READ_FONT;
-	goto failed;
+	if (zio_lseek(zio,
+		(off_t) wide_current->page * EB_SIZE_PAGE + offset,
+		SEEK_SET) < 0) {
+	    error_code = EB_ERR_FAIL_SEEK_FONT;
+	    goto failed;
+	}
+	if (zio_read(zio, bitmap, size) != size) {
+	    error_code = EB_ERR_FAIL_READ_FONT;
+	    goto failed;
+	}
+    } else {
+	memcpy(bitmap, wide_current->glyphs + offset, size);
     }
 
     LOG(("out: eb_wide_font_character_bitmap_jis() = %s",
@@ -648,18 +799,15 @@ character_number=%d)",
  * in the current wide font of the current subbook in `book'.
  */
 static EB_Error_Code
-eb_wide_character_bitmap_latin(book, character_number, bitmap)
-    EB_Book *book;
-    int character_number;
-    char *bitmap;
+eb_wide_character_bitmap_latin(EB_Book *book, int character_number,
+    char *bitmap)
 {
     EB_Error_Code error_code;
+    EB_Font *wide_current;
     int start;
     int end;
     int character_index;
-    off_t location;
-    int width;
-    int height;
+    off_t offset;
     size_t size;
     Zio *zio;
 
@@ -669,6 +817,7 @@ character_number=%d)",
 
     start = book->subbook_current->wide_current->start;
     end = book->subbook_current->wide_current->end;
+    wide_current = book->subbook_current->wide_current;
 
     /*
      * Check for `ch'.  Is it in a range of bitmaps?
@@ -687,36 +836,34 @@ character_number=%d)",
     /*
      * Calculate the size and the location of bitmap data.
      */
-    error_code = eb_wide_font_width(book, &width);
+    error_code = eb_wide_font_size(book, &size);
     if (error_code != EB_SUCCESS)
 	goto failed;
-    error_code = eb_font_height(book, &height);
-    if (error_code != EB_SUCCESS)
-	goto failed;
-    size = (width / 8) * height;
 
     character_index = ((character_number >> 8) - (start >> 8)) * 0xfe
 	+ ((character_number & 0xff) - (start & 0xff));
-    location
-	= (off_t)book->subbook_current->wide_current->page * EB_SIZE_PAGE
-	+ (character_index / (1024 / size)) * 1024
+    offset
+	= (character_index / (1024 / size)) * 1024
 	+ (character_index % (1024 / size)) * size;
 
     /*
      * Read bitmap data.
      */
-    if (book->disc_code == EB_DISC_EB)
-	zio = &book->subbook_current->text_zio;
-    else
-	zio = &book->subbook_current->wide_current->zio;
+    if (wide_current->glyphs == NULL) {
+	zio = &wide_current->zio;
 
-    if (zio_lseek(zio, location, SEEK_SET) < 0) {
-	error_code = EB_ERR_FAIL_SEEK_FONT;
-	goto failed;
-    }
-    if (zio_read(zio, bitmap, size) != size) {
-	error_code = EB_ERR_FAIL_READ_FONT;
-	goto failed;
+	if (zio_lseek(zio,
+		(off_t) wide_current->page * EB_SIZE_PAGE + offset,
+		SEEK_SET) < 0) {
+	    error_code = EB_ERR_FAIL_SEEK_FONT;
+	    goto failed;
+	}
+	if (zio_read(zio, bitmap, size) != size) {
+	    error_code = EB_ERR_FAIL_READ_FONT;
+	    goto failed;
+	}
+    } else {
+	memcpy(bitmap, wide_current->glyphs + offset, size);
     }
 
     LOG(("out: eb_wide_font_character_bitmap_latin() = %s",
@@ -739,10 +886,7 @@ character_number=%d)",
  * Return next `n'th character number from `character_number'.
  */
 EB_Error_Code
-eb_forward_wide_font_character(book, n, character_number)
-    EB_Book *book;
-    int n;
-    int *character_number;
+eb_forward_wide_font_character(EB_Book *book, int n, int *character_number)
 {
     EB_Error_Code error_code;
     int start;
@@ -766,7 +910,7 @@ character_number=%d)",
     }
 
     /*
-     * The wide font must be exist in the current subbook.
+     * The wide font must exist in the current subbook.
      */
     if (book->subbook_current->wide_current == NULL) {
 	error_code = EB_ERR_NO_CUR_FONT;
@@ -850,10 +994,7 @@ character_number=%d)",
  * Return previous `n'th character number from `*character_number'.
  */
 EB_Error_Code
-eb_backward_wide_font_character(book, n, character_number)
-    EB_Book *book;
-    int n;
-    int *character_number;
+eb_backward_wide_font_character(EB_Book *book, int n, int *character_number)
 {
     EB_Error_Code error_code;
     int start;
@@ -877,7 +1018,7 @@ character_number=%d)",
     }
 
     /*
-     * The wide font must be exist in the current subbook.
+     * The wide font must exist in the current subbook.
      */
     if (book->subbook_current->wide_current == NULL) {
 	error_code = EB_ERR_NO_CUR_FONT;

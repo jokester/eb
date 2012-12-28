@@ -1,36 +1,35 @@
 /*                                                            -*- C -*-
- * Copyright (c) 1998, 99, 2000, 01  
- *    Motoyuki Kasahara
+ * Copyright (c) 1998-2006  Motoyuki Kasahara
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
-
-#include "eb.h"
-#include "build-post.h"
 
 #include "ebzip.h"
 
 #include "samefile.h"
 #include "yesno.h"
-
-/*
- * Trick for function protypes.
- */
-#ifndef EB_P
-#ifdef __STDC__
-#define EB_P(p) p
-#else /* not __STDC__ */
-#define EB_P(p) ()
-#endif /* not __STDC__ */
-#endif /* EB_P */
 
 /*
  * Tricks for gettext.
@@ -43,14 +42,15 @@
 #define N_(string) (string)
 #endif
 #else
-#define _(string) (string)       
+#define _(string) (string)
 #define N_(string) (string)
 #endif
 
 /*
  * Unexported functions.
  */
-static int ebzip_zipinfo_file_internal EB_P((const char *, Zio_Code, int));
+static int ebzip_zipinfo_file_internal(const char *in_file_name,
+    Zio_Code in_zio_code, int index_page);
 
 
 /*
@@ -59,9 +59,7 @@ static int ebzip_zipinfo_file_internal EB_P((const char *, Zio_Code, int));
  * If it succeeds, 0 is returned.  Otherwise -1 is returned.
  */
 int
-ebzip_zipinfo_file(in_file_name, in_zio_code)
-    const char *in_file_name;
-    Zio_Code in_zio_code;
+ebzip_zipinfo_file(const char *in_file_name, Zio_Code in_zio_code)
 {
     return ebzip_zipinfo_file_internal(in_file_name, in_zio_code, 0);
 }
@@ -71,10 +69,8 @@ ebzip_zipinfo_file(in_file_name, in_zio_code)
  * If it succeeds, 0 is returned.  Otherwise -1 is returned.
  */
 int
-ebzip_zipinfo_start_file(in_file_name, in_zio_code, index_page)
-    const char *in_file_name;
-    Zio_Code in_zio_code;
-    int index_page;
+ebzip_zipinfo_start_file(const char *in_file_name, Zio_Code in_zio_code,
+    int index_page)
 {
     return ebzip_zipinfo_file_internal(in_file_name, in_zio_code, index_page);
 }
@@ -84,10 +80,8 @@ ebzip_zipinfo_start_file(in_file_name, in_zio_code, index_page)
  * If it succeeds, 0 is returned.  Otherwise -1 is returned.
  */
 static int
-ebzip_zipinfo_file_internal(in_file_name, in_zio_code, index_page)
-    const char *in_file_name;
-    Zio_Code in_zio_code;
-    int index_page;
+ebzip_zipinfo_file_internal(const char *in_file_name, Zio_Code in_zio_code,
+    int index_page)
 {
     Zio in_zio;
     int in_file = -1;
@@ -107,8 +101,8 @@ ebzip_zipinfo_file_internal(in_file_name, in_zio_code, index_page)
 	in_file = zio_open(&in_zio, in_file_name, in_zio_code);
 
     if (in_file < 0) {
-	fprintf(stderr, _("%s: failed to open the file, %s: %s\n"),
-	    invoked_name, strerror(errno), in_file_name);
+	fprintf(stderr, _("%s: failed to open the file: %s\n"),
+	    invoked_name, in_file_name);
 	goto failed;
     }
     if (in_zio_code == ZIO_SEBXA) {
@@ -128,17 +122,36 @@ ebzip_zipinfo_file_internal(in_file_name, in_zio_code, index_page)
     /*
      * Close the file.
      */
-    close(in_file);
+    zio_close(&in_zio);
 
     /*
      * Output information.
      */
     if (in_zio.code == ZIO_PLAIN) {
+#if defined(PRINTF_LL_MODIFIER)
+	printf(_("%llu bytes (not compressed)\n"),
+	    (unsigned long long) in_status.st_size);
+#elif defined(PRINTF_I64_MODIFIER)
+	printf(_("%I64u bytes (not compressed)\n"),
+	    (unsigned __int64) in_status.st_size);
+#else
 	printf(_("%lu bytes (not compressed)\n"),
-	    (unsigned long)in_status.st_size);
+	    (unsigned long) in_status.st_size);
+#endif
     } else {
+#if defined(PRINTF_LL_MODIFIER)
+	printf(_("%llu -> %llu bytes "),
+	    (unsigned long long) in_zio.file_size,
+	    (unsigned long long) in_status.st_size);
+#elif defined(PRINTF_I64_MODIFIER)
+	printf(_("%I64u -> %I64u bytes "),
+	    (unsigned __int64) in_zio.file_size,
+	    (unsigned __int64) in_status.st_size);
+#else
 	printf(_("%lu -> %lu bytes "),
-	    (unsigned long)in_zio.file_size, (unsigned long)in_status.st_size);
+	    (unsigned long) in_zio.file_size,
+	    (unsigned long) in_status.st_size);
+#endif
 	if (in_zio.file_size == 0)
 	    fputs(_("(empty original file, "), stdout);
 	else {

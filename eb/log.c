@@ -1,27 +1,36 @@
 /*
- * Copyright (c) 2001
- *    Motoyuki Kasahara
+ * Copyright (c) 2001-2006  Motoyuki Kasahara
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
  */
 
 #include "build-pre.h"
 #include "eb.h"
 #include "build-post.h"
 
-#ifdef __STDC__
 #include <stdarg.h>
-#else /* not __STDC__ */
-#include <varargs.h>
-#endif /* not __STDC__ */
 
 
 /*
@@ -32,73 +41,103 @@ static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
 /*
+ * Initialization flag.
+ */
+int eb_log_initialized = 0;
+
+/*
+ * Debug log flag.
+ */
+int eb_log_flag = 0;
+
+/*
  * Pointer to log function.
  */
-static void (*eb_log_function) EB_P((const char *, va_list)) = eb_log_stderr;
+static void (*eb_log_function)(const char *message, va_list) = eb_log_stderr;
+
+
+/*
+ * Initialize logging sub-system.
+ */
+void
+eb_initialize_log(void)
+{
+    if (eb_log_initialized)
+	return;
+
+    eb_log_flag = (getenv(EB_DEBUG_ENVIRONMENT_VARIABLE) != NULL);
+    eb_log_function = eb_log_stderr;
+    eb_log_initialized = 1;
+}
 
 /*
  * Set log function.
  */
 void
-eb_set_log_function(function)
-    void (*function) EB_P((const char *, va_list));
+eb_set_log_function(void (*function)(const char *message, va_list ap))
 {
+    if (!eb_log_initialized)
+	eb_initialize_log();
     eb_log_function = function;
+}
+
+/*
+ * Enable logging.
+ */
+void
+eb_enable_log(void)
+{
+    if (!eb_log_initialized)
+	eb_initialize_log();
+    eb_log_flag = 1;
+}
+
+/*
+ * Disable logging.
+ */
+void
+eb_disable_log(void)
+{
+    if (!eb_log_initialized)
+	eb_initialize_log();
+    eb_log_flag = 0;
 }
 
 /*
  * Log a message.
  */
-#ifdef __STDC__
 void
 eb_log(const char *message, ...)
-#else /* not __STDC__ */
-void
-eb_log(message, va_alist)
-    const char *message;
-    va_dcl 
-#endif /* not __STDC__ */
 {
     va_list ap;
 
-#ifdef __STDC__
     va_start(ap, message);
-#else /* not __STDC__ */
-    va_start(ap);
-#endif /* not __STDC__ */
 
-    if (eb_log_function != NULL) {
-	pthread_mutex_lock(&log_mutex);
+    if (eb_log_flag && eb_log_function != NULL)
 	eb_log_function(message, ap);
-	pthread_mutex_unlock(&log_mutex);
-    }
+
+    va_end(ap);
 }
 
 /*
  * Output a log message to standard error.
  * This is the default log handler.
+ *
+ * Currently, this function doesn't work if the system lacks vprintf()
+ * and dopront().
  */
-#if defined(HAVE_VPRINTF) || defined(HAVE_DOPRNT)
 void
-eb_log_stderr(message, ap)
-    const char *message;
-    va_list ap;
-#else /* not defined(HAVE_VPRINTF) || defined(HAVE_DOPRNT) */
-void
-eb_log_stderr(message, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9)
-    const char *message;
-    char *a0, *a1, *a2, *a3, *a4, *a5, *a6, *a7, *a8, *a9;
-#endif /* not defined(HAVE_VPRINTF) || defined(HAVE_DOPRNT) */
+eb_log_stderr(const char *message, va_list ap)
 {
+    pthread_mutex_lock(&log_mutex);
+
     fputs("[EB] ", stderr);
 
-#if defined(HAVE_VPRINTF) || defined(HAVE_DOPRNT)
     vfprintf(stderr, message, ap);
-#else /* not defined(HAVE_VPRINTF) || defined(HAVE_DOPRNT) */
-    fprintf(stderr, message, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9);
-#endif /* not defined(HAVE_VPRINTF) || defined(HAVE_DOPRNT) */
     fputc('\n', stderr);
     fflush(stderr);
+
+    pthread_mutex_unlock(&log_mutex);
 }
 
 #define MAX_QUOTED_STREAM_LENGTH	100
@@ -107,9 +146,7 @@ eb_log_stderr(message, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9)
  * Return Quoted printable string of `stream'.
  */
 const char *
-eb_quoted_stream(stream, stream_length)
-    const char *stream;
-    size_t stream_length;
+eb_quoted_stream(const char *stream, size_t stream_length)
 {
     static char quoted_streams[EB_MAX_KEYWORDS][MAX_QUOTED_STREAM_LENGTH + 3];
     static int current_index = 0;
@@ -157,8 +194,7 @@ eb_quoted_stream(stream, stream_length)
  * Return Quoted printable string.
  */
 const char *
-eb_quoted_string(string)
-    const char *string;
+eb_quoted_string(const char *string)
 {
     return eb_quoted_stream(string, strlen(string));
 }
